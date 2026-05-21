@@ -1,6 +1,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
 #  Dakar Environmental Monitoring Pipeline — Docker Compose
-#  Services : ZooKeeper · 3× Kafka (HA) · MinIO · Producer · StorageWorker · Dashboard
+#  Services : ZooKeeper · 3× Kafka (HA) · MinIO · Producer · StorageWorker
+#             · Dashboard (Streamlit) · JupyterLab
 # ══════════════════════════════════════════════════════════════════════════════
 
 networks:
@@ -144,8 +145,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: server /data --console-address ":9001"
     volumes:
       - minio-data:/data
@@ -158,7 +159,7 @@ services:
   # ── Producer Python ────────────────────────────────────────────────────────
   producer:
     build:
-      context: .
+      context: ./producer
       dockerfile: Dockerfile.producer
     container_name: producer
     restart: unless-stopped
@@ -172,11 +173,12 @@ services:
         condition: service_healthy
     environment:
       PYTHONUNBUFFERED: "1"
+      OWM_API_KEY: ${OWM_API_KEY}
 
-  # ── Storage Worker ─────────────────────────────────────────────────────────
+  # ── Storage Worker (Kafka → MinIO Parquet) ─────────────────────────────────
   storage-worker:
     build:
-      context: .
+      context: ./producer
       dockerfile: Dockerfile.worker
     container_name: storage-worker
     restart: unless-stopped
@@ -189,10 +191,10 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
 
-  # ── Streamlit Dashboard ────────────────────────────────────────────────────
+  # ── Streamlit Dashboard (consumer) ────────────────────────────────────────
   dashboard:
     build:
-      context: .
+      context: ./consumer
       dockerfile: Dockerfile.dashboard
     container_name: dashboard
     restart: unless-stopped
@@ -201,7 +203,7 @@ services:
       kafka1:
         condition: service_healthy
     ports:
-      - "8501:8501"
+      - "${DASHBOARD_PORT:-8501}:8501"
     environment:
       PYTHONUNBUFFERED: "1"
 
@@ -218,10 +220,8 @@ services:
       - "8888:8888"
     environment:
       JUPYTER_ENABLE_LAB: "yes"
-      JUPYTER_TOKEN: "dakar2024"
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN}
       PYTHONUNBUFFERED: "1"
-      # NB_UID/NB_GID = UID de l'utilisateur hôte pour éviter les conflits de permissions
-      # Récupérer avec : id -u  et  id -g  dans ton terminal
       NB_UID: 1000
       NB_GID: 1000
       CHOWN_HOME: "yes"
